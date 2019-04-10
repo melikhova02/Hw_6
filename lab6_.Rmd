@@ -1,0 +1,292 @@
+---
+title: "Лабораторная_6"
+output:
+  html_document:
+    df_print: paged
+  html_notebook: default
+  pdf_document: default
+  word_document: default
+---
+
+# Математическое моделирование: Практика 6
+#   Регуляризация линейных моделей  
+
+
+*Модели*: линейная регрессия, лассо.   
+*Данные*: Boston {MASS}- статистика стоимости жилья в пригороде Бостона.
+
+```{r}
+library('leaps')             # функция regsubset() -- отбор оптимального 
+#  подмножества переменных
+library('glmnet')            # функция glmnet() -- лассо
+library('pls') # регрессия на главные компоненты -- pcr()
+library('MASS')
+library('ISLR')
+
+```
+```{r echo=TRUE}
+my.seed <- 1
+
+# набор данных 
+train.percent <- 0.5
+data(Boston)            # открываем данные
+?Boston
+Boston$chas <- as.factor(Boston$chas)
+sum(is.na(Boston$crim))
+inTrain <- sample(seq_along(Boston$crim), 
+                  nrow(Boston) * train.percent)
+df.test <- Boston[-inTrain, -1]
+```
+
+##Отбор оптимального подмножества
+
+
+```{r echo=TRUE}
+# подгоняем модели с сочетаниями предикторов до 8 включительно
+regfit.full <- regsubsets(crim ~ ., Boston)
+summary(regfit.full)
+# подгоняем модели с сочетаниями предикторов до 13 (максимум в данных)
+regfit.full <- regsubsets(crim ~ ., Boston, nvmax = 13)
+reg.summary <- summary(regfit.full)
+reg.summary
+# структура отчёта по модели (ищем характеристики качества)
+names(reg.summary)
+# R^2 и скорректированный R^2
+round(reg.summary$rsq, 3)
+# на графике
+plot(1:13, reg.summary$rsq, type = 'b',
+     xlab = 'Количество предикторов', ylab = 'R-квадрат')
+# сода же добавим скорректированный R-квадрат
+points(1:13, reg.summary$adjr2, col = 'red')
+# модель с максимальным скорректированным R-квадратом
+which.max(reg.summary$adjr2)
+### 9
+points(which.max(reg.summary$adjr2), 
+       reg.summary$adjr2[which.max(reg.summary$adjr2)],
+       col = 'red', cex = 2, pch = 20)
+legend('bottomright', legend = c('R^2', 'R^2_adg'),
+      col = c('black', 'red'), lty = c(1, NA),
+      pch = c(1, 1))
+# C_p
+reg.summary$cp
+# число предикторов у оптимального значения критерия
+which.min(reg.summary$cp)
+### 8
+# график
+plot(reg.summary$cp, xlab = 'Число предикторов',
+     ylab = 'C_p', type = 'b')
+points(which.min(reg.summary$cp),
+       reg.summary$cp[which.min(reg.summary$cp)], 
+       col = 'red', cex = 2, pch = 20)
+# BIC
+reg.summary$bic
+# число предикторов у оптимального значения критерия
+which.min(reg.summary$bic)
+### 3
+# график
+plot(reg.summary$bic, xlab = 'Число предикторов',
+     ylab = 'BIC', type = 'b')
+points(which.min(reg.summary$bic),
+       reg.summary$bic[which.min(reg.summary$bic)], 
+       col = 'red', cex = 2, pch = 20)
+# метод plot для визуализации результатов
+?plot.regsubsets
+plot(regfit.full, scale = 'r2')
+plot(regfit.full, scale = 'adjr2')
+plot(regfit.full, scale = 'Cp')
+plot(regfit.full, scale = 'bic')
+# коэффициенты модели с наименьшим BIC
+round(coef(regfit.full, 3), 3)
+
+```
+
+Наилучшие: 
+
+Модель 1 с наименьшими BIC- модель регрессии с тремя объясняющими переменными.
+
+Модель 2 с оптимальным значением критерия CP- модель регрессии с восемью объясняющими переменными. 
+
+Модель 3 с максимальным скорректированным R-квадратом- модель регрессии с девятьяю объясняющими переменными.
+
+Построим эти модели и оценим их характеристики.
+
+
+## Модель 1  
+
+```{r , warning = F, error = F}
+model1 <- lm(crim ~ rad + black + lstat,
+              data = Boston)
+summary(model1)
+y.fact <- Boston[-inTrain, 1]
+y.model1.lm <- predict(model1, df.test)
+MSE.lm <- sum((y.model1.lm - y.fact)^2) / length(y.model1.lm)
+MSE.lm
+```
+
+В модели все объясняющие переменные являются значимыми на уровне 0,01.  
+
+## Модель 2 
+
+```{r , warning = F, error = F}
+model2 <- lm(crim ~ zn + nox + dis + rad + ptratio + black + lstat + medv,
+              data = Boston)
+summary(model2)
+y.fact <- Boston[-inTrain, 1]
+y.model2.lm <- predict(model2, df.test)
+MSE.lm <- sum((y.model2.lm - y.fact)^2) / length(y.model2.lm)
+MSE.lm
+```
+
+В модели лишь половина объясняющих переменных являются значимыми на уровне 0,01. 
+
+## Модель 3 
+
+```{r , warning = F, error = F}
+model3 <- lm(crim ~ zn + indus + nox + dis + rad + ptratio + black + lstat + medv,
+              data = Boston)
+summary(model3)
+y.fact <- Boston[-inTrain, 1]
+y.model3.lm <- predict(model3, df.test)
+MSE.lm <- sum((y.model3.lm - y.fact)^2) / length(y.model2.lm)
+MSE.lm
+```
+
+В модели лишь 3 объясняющих переменных являются значимыми на уровне 0,01. 
+
+MSE во всех трех моделях примерно одинаковы.
+
+Вывод: за наилучшую примем первую модель с тремя объясняющими переменными.
+
+
+
+##Пошаговое включение 
+
+```{r echo=TRUE}
+
+regfit.fwd <- regsubsets(crim ~ ., data = Boston,
+                         nvmax = 13, method = 'forward')
+summary(regfit.fwd)
+round(coef(regfit.fwd, 3), 3)
+```
+
+##Метод проверочной выборки
+
+Результат: оптимальное количество объясняющих переменных- 2.
+
+```{r echo=TRUE}
+x <- model.matrix(crim ~ ., Boston)[, -1]
+# и вектор значений зависимой переменной
+y <- Boston$crim
+set.seed(my.seed)
+train <- sample(c(T, F), nrow(Boston), rep = T)
+test <- !train
+y.test <- y[test]
+# обучаем модели
+regfit.best <- regsubsets(crim ~ ., data = Boston[train, ],
+                          nvmax = 13)
+# матрица объясняющих переменных модели для тестовой выборки
+test.mat <- model.matrix(crim ~ ., data = Boston[test, ])
+
+# вектор ошибок
+val.errors <- rep(NA, 13)
+# цикл по количеству предикторов
+for (i in 1:13){
+  coefi <- coef(regfit.best, id = i)
+  pred <- test.mat[, names(coefi)] %*% coefi
+  # записываем значение MSE на тестовой выборке в вектор
+  val.errors[i] <- mean((Boston$crim[test] - pred)^2)
+}
+round(val.errors, 0)
+# находим число предикторов у оптимальной модели
+which.min(val.errors)
+### 2
+# коэффициенты оптимальной модели
+round(coef(regfit.best, 2), 3)
+
+# функция для прогноза для функции regsubset()
+predict.regsubsets <- function(object, newdata, id, ...){
+  form <- as.formula(object$call[[2]])
+  mat <- model.matrix(form, newdata)
+  coefi <- coef(object, id = id)
+  xvars <- names(coefi)
+  mat[, xvars] %*% coefi
+}
+
+# набор с оптимальным количеством переменных на полном наборе данных
+regfit.best <- regsubsets(crim ~ ., data = Boston,
+                          nvmax = 13)
+round(coef(regfit.best, 2), 3)
+
+```
+
+##k-кратная кросс-валидация
+
+Результат: оптимальное количество объясняющих переменных- 12.
+
+```{r echo=TRUE}
+# отбираем 10 блоков наблюдений
+k <- 10
+set.seed(my.seed)
+folds <- sample(1:k, nrow(Boston), replace = T)
+
+# заготовка под матрицу с ошибками
+cv.errors <- matrix(NA, k, 13, dimnames = list(NULL, paste(1:13)))
+
+# заполняем матрицу в цикле по блокам данных
+for (j in 1:k){
+  best.fit <- regsubsets(crim ~ ., data = Boston[folds != j, ],
+                         nvmax = 13)
+  # теперь цикл по количеству объясняющих переменных
+  for (i in 1:13){
+    # модельные значения Salary
+    pred <- predict(best.fit, Boston[folds == j, ], id = i)
+    # вписываем ошибку в матрицу
+    cv.errors[j, i] <- mean((Boston$crim[folds == j] - pred)^2)
+  }
+}
+
+# усредняем матрицу по каждому столбцу (т.е. по блокам наблюдений), 
+#  чтобы получить оценку MSE для каждой модели с фиксированным 
+#  количеством объясняющих переменных
+mean.cv.errors <- apply(cv.errors, 2, mean)
+round(mean.cv.errors, 0)
+
+# на графике
+plot(mean.cv.errors, type = 'b')
+points(which.min(mean.cv.errors), mean.cv.errors[which.min(mean.cv.errors)],
+       col = 'red', pch = 20, cex = 2)
+
+# перестраиваем модель с 12 объясняющими переменными на всём наборе данных
+reg.best <- regsubsets(crim ~ ., data = Boston, nvmax = 13)
+round(coef(reg.best, 12), 3)
+```
+
+##Лассо
+
+```{r echo=TRUE}
+x <- model.matrix(crim ~ ., Boston)[, -1]
+
+# и вектор значений зависимой переменной
+y <- Boston$crim
+
+grid <- 10^seq(10, -2, length = 100)
+lasso.mod <- glmnet(x[train, ], y[train], alpha = 1, lambda = grid)
+plot(lasso.mod)
+
+# Подбор оптимального значения лямбда с помощью перекрёстной проверки ##########
+
+set.seed(my.seed)
+cv.out <- cv.glmnet(x[train, ], y[train], alpha = 1)
+plot(cv.out)
+bestlam <- cv.out$lambda.min
+lasso.pred <- predict(lasso.mod, s = bestlam, newx = x[test, ])
+round(mean((lasso.pred - y.test)^2), 0)
+
+# коэффициенты лучшей модели
+out <- glmnet(x, y, alpha = 1, lambda = grid)
+lasso.coef <- predict(out, type = 'coefficients',
+                      s = bestlam)[1:14, ]
+round(lasso.coef, 3)
+
+round(lasso.coef[lasso.coef != 0], 3)
+```
